@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CB911 Reconciliation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f9f8f6;
+      --surface: #ffffff;
+      --surface-2: #f3f2ef;
+      --border: rgba(0,0,0,0.09);
+      --border-strong: rgba(0,0,0,0.18);
+      --text: #1a1917;
+      --text-2: #6b6a67;
+      --text-3: #a3a29f;
+      --green: #1a7a4a;
+      --green-bg: #edf7f1;
+      --red: #b92c2c;
+      --red-bg: #fdf0f0;
+      --amber: #92600a;
+      --amber-bg: #fef8ee;
+      --accent: #1a1917;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top nav ── */
+    nav {
+      background: var(--surface);
+      border-bottom: 0.5px solid var(--border);
+      padding: 0 2rem;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 10px; }
+    .nav-logo {
+      width: 28px; height: 28px;
+      background: var(--text);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .nav-logo svg { width: 16px; height: 16px; fill: white; }
+    .nav-title { font-size: 13px; font-weight: 500; color: var(--text); }
+    .nav-tag { font-size: 11px; color: var(--text-3); font-family: 'DM Mono', monospace; }
+
+    /* ── Layout ── */
+    main {
+      flex: 1;
+      max-width: 800px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+
+    /* ── Step bar ── */
+    .step-bar {
+      display: flex;
+      align-items: center;
+      margin-bottom: 2.5rem;
+    }
+    .step {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 12px; color: var(--text-3);
+      transition: color 0.2s;
+    }
+    .step.active { color: var(--text); }
+    .step.done { color: var(--green); }
+    .step-num {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 0.5px solid var(--border-strong);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 500;
+      font-family: 'DM Mono', monospace;
+      transition: all 0.2s;
+    }
+    .step.active .step-num { background: var(--text); color: white; border-color: var(--text); }
+    .step.done .step-num { background: var(--green-bg); color: var(--green); border-color: var(--green); }
+    .step-line { flex: 1; height: 0.5px; background: var(--border); margin: 0 10px; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .card-label {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 1.25rem;
+    }
+
+    /* ── Recon type selector ── */
+    .recon-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .recon-btn {
+      padding: 16px;
+      border: 0.5px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s;
+      font-family: 'DM Sans', sans-serif;
+    }
+    .recon-btn:hover:not(.disabled) { border-color: var(--border-strong); background: var(--surface-2); }
+    .recon-btn.selected { border: 1.5px solid var(--text); }
+    .recon-btn.disabled { opacity: 0.4; cursor: not-allowed; }
+    .rb-badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      margin-bottom: 8px;
+      font-family: 'DM Mono', monospace;
+    }
+    .badge-live { background: var(--green-bg); color: var(--green); }
+    .badge-soon { background: var(--surface-2); color: var(--text-3); }
+    .rb-name { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 3px; }
+    .rb-desc { font-size: 11px; color: var(--text-2); line-height: 1.4; }
+
+    /* ── Primary button ── */
+    .btn-primary {
+      width: 100%;
+      padding: 11px;
+      background: var(--text);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      margin-top: 1rem;
+    }
+    .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; }
+    .btn-primary:not(:disabled):hover { opacity: 0.82; }
+
+    .btn-secondary {
+      padding: 8px 16px;
+      background: var(--surface);
+      color: var(--text);
+      border: 0.5px solid var(--border-strong);
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 400;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-secondary:hover { background: var(--surface-2); }
+
+    /* ── File rows ── */
+    .file-list { display: flex; flex-direction: column; gap: 7px; }
+    .file-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--surface-2);
+      border: 0.5px solid var(--border);
+      border-radius: 8px;
+      transition: border-color 0.15s;
+    }
+    .file-row.valid { border-color: var(--green); background: var(--green-bg); }
+    .file-row.invalid { border-color: var(--red); background: var(--red-bg); }
+    .file-type-badge {
+      width: 32px; height: 32px;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 500;
+      font-family: 'DM Mono', monospace;
+      flex-shrink: 0;
+    }
+    .xlsx-badge { background: #e8f5e9; color: #2e7d32; }
+    .pdf-badge  { background: #fce4ec; color: #c62828; }
+    .file-info { flex: 1; min-width: 0; }
+    .file-info-name { font-size: 12px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-info-sub  { font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-state { font-size: 11px; font-family: 'DM Mono', monospace; white-space: nowrap; flex-shrink: 0; }
+    .state-wait  { color: var(--text-3); }
+    .state-ok    { color: var(--green); }
+    .state-err   { color: var(--red); }
+    .choose-btn {
+      font-size: 11px; padding: 5px 11px;
+      border: 0.5px solid var(--border-strong);
+      border-radius: 6px;
+      background: var(--surface);
+      cursor: pointer;
+      color: var(--text);
+      white-space: nowrap;
+      flex-shrink: 0;
+      font-family: 'DM Sans', sans-serif;
+      transition: background 0.12s;
+    }
+    .choose-btn:hover { background: var(--surface-2); }
+    input[type=file] { display: none; }
+
+    /* ── Progress ── */
+    .progress-wrap { margin-top: 1rem; }
+    .progress-track { height: 2px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .progress-fill  { height: 100%; background: var(--text); border-radius: 2px; transition: width 0.4s ease; width: 0%; }
+    .progress-label { font-size: 11px; color: var(--text-2); font-family: 'DM Mono', monospace; margin-top: 6px; }
+
+    /* ── Error box ── */
+    .error-box {
+      margin-top: 1rem; padding: 12px 14px;
+      background: var(--red-bg);
+      border: 0.5px solid var(--red);
+      border-radius: 8px;
+      color: var(--red);
+      font-size: 12px;
+      display: none;
+    }
+
+    /* ── Results ── */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 1.25rem;
+    }
+    .metric {
+      background: var(--surface-2);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .metric-label { font-size: 10px; color: var(--text-2); margin-bottom: 5px; }
+    .metric-val { font-size: 20px; font-weight: 500; font-family: 'DM Mono', monospace; color: var(--text); }
+    .metric-val.green { color: var(--green); }
+    .metric-val.red   { color: var(--red); }
+    .metric-val.amber { color: var(--amber); }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    thead th {
+      text-align: left;
+      font-size: 10px; font-weight: 500;
+      color: var(--text-2);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 6px 8px;
+      border-bottom: 0.5px solid var(--border-strong);
+      white-space: nowrap;
+    }
+    tbody td {
+      padding: 9px 8px;
+      border-bottom: 0.5px solid var(--border);
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      white-space: nowrap;
+    }
+    tbody tr:last-child td {
+      border-bottom: none;
+      background: var(--surface-2);
+      font-weight: 500;
+    }
+    .pill {
+      display: inline-block; padding: 2px 8px;
+      border-radius: 99px; font-size: 10px;
+      font-family: 'DM Sans', monospace;
+    }
+    .pill-ok   { background: var(--green-bg); color: var(--green); }
+    .pill-fail { background: var(--red-bg); color: var(--red); }
+
+    .section-title {
+      font-size: 12px; font-weight: 500;
+      color: var(--text);
+      margin-bottom: 1rem;
+      padding-bottom: 8px;
+      border-bottom: 0.5px solid var(--border);
+    }
+
+    .btn-row { display: flex; gap: 8px; margin-top: 1.25rem; flex-wrap: wrap; }
+
+    footer {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-3);
+      padding: 1.5rem;
+      border-top: 0.5px solid var(--border);
+      background: var(--surface);
+    }
+
+    @media (max-width: 600px) {
+      .recon-grid { grid-template-columns: 1fr; }
+      .summary-grid { grid-template-columns: repeat(2, 1fr); }
+      nav { padding: 0 1rem; }
+      main { padding: 1.5rem 1rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">
+    <div class="nav-logo">
+      <svg viewBox="0 0 20 20"><path d="M10 2L2 6v8l8 4 8-4V6L10 2zm0 2.2l5.5 2.75L10 9.7 4.5 6.95 10 4.2zM3.5 8.3l5.75 2.88V17L3.5 14.13V8.3zm7.25 8.7v-5.82l5.75-2.88v5.83L10.75 17z"/></svg>
+    </div>
+    <span class="nav-title">CB911 Reconciliation</span>
+  </div>
+  <span class="nav-tag">Billing Support · Internal</span>
+</nav>
+
+<main>
+  <!-- Step bar -->
+  <div class="step-bar">
+    <div class="step active" id="step1"><span class="step-num">1</span> Select type</div>
+    <div class="step-line"></div>
+    <div class="step" id="step2"><span class="step-num">2</span> Upload files</div>
+    <div class="step-line"></div>
+    <div class="step" id="step3"><span class="step-num">3</span> Results</div>
+  </div>
+
+  <!-- Phase 1: Select recon type -->
+  <div id="phase-select">
+    <div class="card">
+      <div class="card-label">Reconciliation type</div>
+      <div class="recon-grid">
+        <button class="recon-btn selected" id="btn-revshare" onclick="selectType(this)">
+          <div class="rb-badge badge-live">live</div>
+          <div class="rb-name">RevShare</div>
+          <div class="rb-desc">Net wins & fee validation across entities</div>
+        </button>
+        <button class="recon-btn disabled">
+          <div class="rb-badge badge-soon">soon</div>
+          <div class="rb-name">Attempt Fee</div>
+          <div class="rb-desc">Alerts, OI inquiries & chargebacks</div>
+        </button>
+        <button class="recon-btn disabled">
+          <div class="rb-badge badge-soon">soon</div>
+          <div class="rb-name">Alerts / RDR</div>
+          <div class="rb-desc">PRM queries & intercept report</div>
+        </button>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="goUpload()">Continue →</button>
+  </div>
+
+  <!-- Phase 2: Upload files -->
+  <div id="phase-upload" style="display:none">
+    <div class="card">
+      <div class="card-label">Required files — RevShare</div>
+      <div class="file-list" id="file-list"></div>
+    </div>
+    <button class="btn-primary" id="run-btn" disabled onclick="runRecon()">Run reconciliation</button>
+    <div class="progress-wrap" id="progress-wrap" style="display:none">
+      <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+      <p class="progress-label" id="progress-label"></p>
+    </div>
+    <div class="error-box" id="error-box"></div>
+  </div>
+
+  <!-- Phase 3: Results -->
+  <div id="phase-results" style="display:none">
+    <div class="summary-grid" id="summary-grid"></div>
+    <div class="card" style="margin-bottom:1rem">
+      <div class="section-title">Invoice vs internal — RevShare</div>
+      <div class="table-wrap"><table id="recon-table"></table></div>
+    </div>
+    <div class="card">
+      <div class="section-title">Billing identifier match — CB Historical</div>
+      <div class="table-wrap"><table id="cb-table"></table></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-secondary" onclick="downloadExcel()" id="dl-btn">↓ Download Excel report</button>
+      <button class="btn-secondary" onclick="resetApp()">← New reconciliation</button>
+    </div>
+  </div>
+</main>
+
+<footer>CB911 Reconciliation Tool · Internal use only</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const N8N_URL = 'https://ktorres1104.app.n8n.cloud/webhook-test/ce18bf83-c009-40d2-a10b-378c2778af2b';
+
+const REQUIRED_FILES = [
+  { key:'bold_excel',      label:'Bold Billing Support',      ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Bold_Billing_Support.xlsx' },
+  { key:'petunia_excel',   label:'Petunia Billing Support',   ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Petunia_Billing_Support.xlsx' },
+  { key:'seventeen_excel', label:'Seventeen Billing Support', ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Seventeen_Billing_Support.xlsx' },
+  { key:'sonaga_excel',    label:'Sonaga Billing Support',    ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Sonaga_Billing_Support.xlsx' },
+  { key:'bold_pdf',        label:'Bold Invoice',              ext:'pdf',  badge:'pdf',  desc:'Revshare_Bold.pdf' },
+  { key:'petunia_pdf',     label:'Petunia Invoice',           ext:'pdf',  badge:'pdf',  desc:'Revshare_Petunia.pdf' },
+  { key:'seventeen_pdf',   label:'Seventeen Invoice',         ext:'pdf',  badge:'pdf',  desc:'Revshare_Seventeen.pdf' },
+  { key:'sonaga_pdf',      label:'Sonaga Invoice',            ext:'pdf',  badge:'pdf',  desc:'Revshare_Sonaga.pdf' },
+  { key:'cb_historical',   label:'CB Historical',             ext:'xlsx', badge:'xlsx', desc:'CB_Historical.xlsx' },
+];
+
+const uploaded = {};
+const states   = {};
+let lastResults = null;
+
+function setStep(n) {
+  [1,2,3].forEach(i => {
+    const el = document.getElementById('step'+i);
+    el.className = 'step' + (i < n ? ' done' : i === n ? ' active' : '');
+  });
+}
+
+function selectType(el) {
+  document.querySelectorAll('.recon-btn:not(.disabled)').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function goUpload() {
+  document.getElementById('phase-select').style.display = 'none';
+  document.getElementById('phase-upload').style.display = 'block';
+  setStep(2);
+  renderFiles();
+}
+
+function renderFiles() {
+  document.getElementById('file-list').innerHTML = REQUIRED_FILES.map(f => `
+    <div class="file-row ${states[f.key] === 'valid' ? 'valid' : states[f.key] === 'invalid' ? 'invalid' : ''}" id="row-${f.key}">
+      <div class="file-type-badge ${f.badge}-badge">${f.badge.toUpperCase()}</div>
+      <div class="file-info">
+        <div class="file-info-name">${f.label}</div>
+        <div class="file-info-sub">${uploaded[f.key] ? uploaded[f.key].name : f.desc}</div>
+      </div>
+      <span class="file-state ${states[f.key] === 'valid' ? 'state-ok' : states[f.key] === 'invalid' ? 'state-err' : 'state-wait'}">
+        ${states[f.key] === 'valid' ? '✓ valid' : states[f.key] === 'invalid' ? '✗ error' : 'waiting'}
+      </span>
+      <input type="file" id="inp-${f.key}" accept=".${f.ext}" onchange="handleFile('${f.key}',this)">
+      <button class="choose-btn" onclick="document.getElementById('inp-${f.key}').click()">
+        ${uploaded[f.key] ? 'Replace' : 'Choose'}
+      </button>
+    </div>
+  `).join('');
+}
+
+function handleFile(key, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const spec = REQUIRED_FILES.find(f => f.key === key);
+  const ext = file.name.split('.').pop().toLowerCase();
+  states[key] = ext === spec.ext ? 'valid' : 'invalid';
+  uploaded[key] = file;
+  renderFiles();
+  document.getElementById('run-btn').disabled = !REQUIRED_FILES.every(f => states[f.key] === 'valid');
+}
+
+function setProgress(pct, msg) {
+  document.getElementById('progress-wrap').style.display = 'block';
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = msg;
+}
+
+async function runRecon() {
+  document.getElementById('run-btn').disabled = true;
+  document.getElementById('error-box').style.display = 'none';
+  setProgress(10, 'Preparing files...');
+
+  const form = new FormData();
+  for (const [key, file] of Object.entries(uploaded)) form.append(key, file, file.name);
+
+  setProgress(30, 'Sending to n8n...');
+  try {
+    const resp = await fetch(N8N_URL, { method:'POST', body: form });
+    setProgress(75, 'Running reconciliation logic...');
+    if (!resp.ok) throw new Error('n8n returned ' + resp.status + ': ' + await resp.text());
+    const data = await resp.json();
+    setProgress(100, 'Complete.');
+    setTimeout(() => showResults(data), 350);
+  } catch(err) {
+    document.getElementById('progress-wrap').style.display = 'none';
+    const eb = document.getElementById('error-box');
+    eb.style.display = 'block';
+    eb.textContent = 'Error: ' + err.message;
+    document.getElementById('run-btn').disabled = false;
+  }
+}
+
+const fmt  = v => '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+const fmtN = v => Number(v).toLocaleString('en-US');
+const pill = ok => `<span class="pill ${ok ? 'pill-ok' : 'pill-fail'}">${ok ? 'match' : 'diff'}</span>`;
+const pct  = (a,b) => b > 0 ? (a/b*100).toFixed(1)+'%' : '—';
+
+function showResults(data) {
+  lastResults = data;
+  document.getElementById('phase-upload').style.display = 'none';
+  document.getElementById('phase-results').style.display = 'block';
+  setStep(3);
+
+  const rows = data.recon_rows || [];
+  const tot  = data.totals    || {};
+  const allOk = tot.qty_match && tot.net_wins_match && tot.fee_match;
+  const totalNotFound = rows.reduce((s,r) => s+(r.cb_not_found||0), 0);
+
+  document.getElementById('summary-grid').innerHTML = `
+    <div class="metric"><div class="metric-label">Total invoice amount</div><div class="metric-val">${fmt(tot.inv_amount||0)}</div></div>
+    <div class="metric"><div class="metric-label">Total cases</div><div class="metric-val">${fmtN(tot.inv_qty||0)}</div></div>
+    <div class="metric"><div class="metric-label">Overall status</div><div class="metric-val ${allOk?'green':'red'}">${allOk?'Matched':'Discrepancy'}</div></div>
+    <div class="metric"><div class="metric-label">Unmatched in history</div><div class="metric-val ${totalNotFound>0?'amber':'green'}">${fmtN(totalNotFound)}</div></div>
+  `;
+
+  const rHead = `<thead><tr>
+    <th>Entity</th><th>Invoice #</th>
+    <th>Inv. cases</th><th>Int. cases</th><th>Qty</th>
+    <th>Inv. net wins</th><th>Int. net wins</th><th>Wins</th>
+    <th>Inv. fee</th><th>Int. fee</th><th>Fee</th>
+  </tr></thead>`;
+  const rBody = [...rows, {...tot, entity:'Total', invoice_no:''}].map(r => `<tr>
+    <td>${r.entity}</td>
+    <td style="color:var(--text-2)">${r.invoice_no||'—'}</td>
+    <td>${fmtN(r.inv_qty||0)}</td><td>${fmtN(r.int_qty||0)}</td><td>${pill(r.qty_match)}</td>
+    <td>${fmt(r.inv_net_wins||0)}</td><td>${fmt(r.int_net_wins||0)}</td><td>${pill(r.net_wins_match)}</td>
+    <td>${fmt(r.inv_amount||0)}</td><td>${fmt(r.int_fee||0)}</td><td>${pill(r.fee_match)}</td>
+  </tr>`).join('');
+  document.getElementById('recon-table').innerHTML = rHead + '<tbody>' + rBody + '</tbody>';
+
+  const cHead = `<thead><tr><th>Entity</th><th>Wins</th><th>Losses</th><th>Not found</th><th>Total</th><th>Match rate</th></tr></thead>`;
+  const cBody = [...rows, {...tot, entity:'Total'}].map(r => `<tr>
+    <td>${r.entity}</td>
+    <td style="color:var(--green)">${fmtN(r.cb_wins||0)}</td>
+    <td style="color:var(--red)">${fmtN(r.cb_losses||0)}</td>
+    <td style="color:var(--amber)">${fmtN(r.cb_not_found||0)}</td>
+    <td>${fmtN(r.cb_total||0)}</td>
+    <td>${pct((r.cb_wins||0)+(r.cb_losses||0), r.cb_total||0)}</td>
+  </tr>`).join('');
+  document.getElementById('cb-table').innerHTML = cHead + '<tbody>' + cBody + '</tbody>';
+}
+
+function downloadExcel() {
+  if (!lastResults) return;
+  const rows = lastResults.recon_rows || [];
+  const tot  = lastResults.totals    || {};
+
+  const reconSheet = [
+    ['Entity','Invoice #','Inv. Cases','Int. Cases','Qty Match','Qty Diff','Inv. Net Wins','Int. Net Wins','Net Wins Match','Net Wins Diff','Inv. Fee','Int. Fee','Fee Match','Fee Diff'],
+    ...rows.map(r => [r.entity, r.invoice_no, r.inv_qty, r.int_qty, r.qty_match?'Yes':'No', r.qty_diff, r.inv_net_wins, r.int_net_wins, r.net_wins_match?'Yes':'No', r.net_wins_diff, r.inv_amount, r.int_fee, r.fee_match?'Yes':'No', r.fee_diff]),
+    ['TOTAL','', tot.inv_qty, tot.int_qty, tot.qty_match?'Yes':'No', tot.qty_diff, tot.inv_net_wins, tot.int_net_wins, tot.net_wins_match?'Yes':'No', tot.net_wins_diff, tot.inv_amount, tot.int_fee, tot.fee_match?'Yes':'No', tot.fee_diff]
+  ];
+
+  const cbSheet = [
+    ['Entity','Wins','Losses','Not Found','Total','Match Rate'],
+    ...rows.map(r => [r.entity, r.cb_wins, r.cb_losses, r.cb_not_found, r.cb_total, r.cb_total>0?((r.cb_wins+r.cb_losses)/r.cb_total):0]),
+    ['TOTAL', tot.cb_wins, tot.cb_losses, tot.cb_not_found, tot.cb_total, tot.cb_total>0?((tot.cb_wins+tot.cb_losses)/tot.cb_total):0]
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(reconSheet), 'RevShare Recon');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(cbSheet), 'CB Historical Match');
+  XLSX.writeFile(wb, 'CB911_RevShare_Recon_' + new Date().toISOString().slice(0,10) + '.xlsx');
+}
+
+function resetApp() {
+  Object.keys(uploaded).forEach(k => delete uploaded[k]);
+  Object.keys(states).forEach(k => delete states[k]);
+  lastResults = null;
+  document.getElementById('phase-results').style.display = 'none';
+  document.getElementById('phase-select').style.display = 'block';
+  document.getElementById('progress-wrap').style.display = 'none';
+  document.getElementById('error-box').style.display = 'none';
+  setStep(1);
+}
+</script>
+</body>
+</html>
