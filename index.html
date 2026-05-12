@@ -400,7 +400,10 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const N8N_URL = '/api/recon';
+const N8N_URLS = {
+  revshare:    '/api/recon',
+  attempt_fee: '/api/attempt-fee'
+};
 
 const RECON_FILES = {
   revshare: [
@@ -713,7 +716,7 @@ async function runRecon() {
 
   setProgress(30, 'Sending to n8n...');
   try {
-    const resp = await fetch(N8N_URL, { method:'POST', body: form });
+    const resp = await fetch(N8N_URLS[selectedRecon], { method:'POST', body: form });
     setProgress(75, 'Running reconciliation logic...');
     if (!resp.ok) throw new Error('n8n returned ' + resp.status + ': ' + await resp.text());
     const data = await resp.json();
