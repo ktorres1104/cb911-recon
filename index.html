@@ -202,6 +202,7 @@
     .file-info { flex: 1; min-width: 0; }
     .file-info-name { font-size: 12px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .file-info-sub  { font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-info-err  { font-size: 11px; color: var(--red); margin-top: 2px; white-space: normal; line-height: 1.3; }
     .file-state { font-size: 11px; font-family: 'DM Mono', monospace; white-space: nowrap; flex-shrink: 0; }
     .state-wait  { color: var(--text-3); }
     .state-ok    { color: var(--green); }
@@ -399,7 +400,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const N8N_URL = '/api/recon';
+const N8N_URL = '/api/recon';;
 
 const REQUIRED_FILES = [
   { key:'bold_excel',      label:'Bold Billing Support',      ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Bold_Billing_Support.xlsx' },
@@ -437,32 +438,156 @@ function goUpload() {
 }
 
 function renderFiles() {
-  document.getElementById('file-list').innerHTML = REQUIRED_FILES.map(f => `
-    <div class="file-row ${states[f.key] === 'valid' ? 'valid' : states[f.key] === 'invalid' ? 'invalid' : ''}" id="row-${f.key}">
-      <div class="file-type-badge ${f.badge}-badge">${f.badge.toUpperCase()}</div>
-      <div class="file-info">
-        <div class="file-info-name">${f.label}</div>
-        <div class="file-info-sub">${uploaded[f.key] ? uploaded[f.key].name : f.desc}</div>
-      </div>
-      <span class="file-state ${states[f.key] === 'valid' ? 'state-ok' : states[f.key] === 'invalid' ? 'state-err' : 'state-wait'}">
-        ${states[f.key] === 'valid' ? '✓ valid' : states[f.key] === 'invalid' ? '✗ error' : 'waiting'}
-      </span>
-      <input type="file" id="inp-${f.key}" accept=".${f.ext}" onchange="handleFile('${f.key}',this)">
-      <button class="choose-btn" onclick="document.getElementById('inp-${f.key}').click()">
-        ${uploaded[f.key] ? 'Replace' : 'Choose'}
-      </button>
-    </div>
-  `).join('');
+  document.getElementById('file-list').innerHTML = REQUIRED_FILES.map(f => {
+    const s = states[f.key];
+    const rowClass   = s === 'valid' ? 'valid' : s === 'invalid' ? 'invalid' : '';
+    const stateClass = s === 'valid' ? 'state-ok' : s === 'invalid' ? 'state-err' : 'state-wait';
+    const stateLabel = s === 'valid' ? '&#10003; valid' : s === 'invalid' ? '&#10007; invalid' : s === 'validating' ? 'checking...' : 'waiting';
+    const errMsg     = validationErrors[f.key] ? '<div class="file-info-err">' + validationErrors[f.key] + '</div>' : '';
+    return '<div class="file-row ' + rowClass + '" id="row-' + f.key + '">' +
+      '<div class="file-type-badge ' + f.badge + '-badge">' + f.badge.toUpperCase() + '</div>' +
+      '<div class="file-info">' +
+        '<div class="file-info-name">' + f.label + '</div>' +
+        '<div class="file-info-sub">' + (uploaded[f.key] ? uploaded[f.key].name : f.desc) + '</div>' +
+        errMsg +
+      '</div>' +
+      '<span class="file-state ' + stateClass + '">' + stateLabel + '</span>' +
+      '<input type="file" id="inp-' + f.key + '" accept=".' + f.ext + '" onchange="handleFile(\'' + f.key + '\',this)">' +
+      '<button class="choose-btn" onclick="document.getElementById(\'inp-' + f.key + '\').click()">' +
+        (uploaded[f.key] ? 'Replace' : 'Choose') +
+      '</button>' +
+    '</div>';
+  }).join('');
 }
 
-function handleFile(key, input) {
+// ── Required columns per file type ───────────────────────────────────────
+const REQUIRED_COLS = {
+  billing_support: ['CB ID', 'Billing Identifier', 'USD Converted Amount', 'Verdict'],
+  cb_historical:   ['BILLING_IDENTIFIER', 'INTERNAL_STATUS', 'LATEST_CB_STATUS_DATE'],
+};
+
+const validationErrors = {};
+
+async function validateExcel(file, requiredCols) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        if (!rows || rows.length < 2) {
+          resolve({ ok: false, error: 'File appears empty or has no data rows' });
+          return;
+        }
+        // Headers are in first row
+        const headers = rows[0].map(h => String(h || '').trim());
+        const missing = requiredCols.filter(col => !headers.includes(col));
+        if (missing.length > 0) {
+          resolve({ ok: false, error: `Missing columns: ${missing.join(', ')}` });
+        } else {
+          resolve({ ok: true, rowCount: rows.length - 1 });
+        }
+      } catch(err) {
+        resolve({ ok: false, error: 'Could not read file: ' + err.message });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function validatePDF(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        // Check PDF magic bytes: first 4 bytes should be %PDF
+        const arr = new Uint8Array(e.target.result.slice(0, 4));
+        const magic = String.fromCharCode(...arr);
+        if (!magic.startsWith('%PDF')) {
+          resolve({ ok: false, error: 'File is not a valid PDF' });
+          return;
+        }
+        // Read text and check for expected invoice markers
+        const text = new TextDecoder('latin1').decode(new Uint8Array(e.target.result));
+        if (!text.includes('RevShare')) {
+          resolve({ ok: false, error: 'PDF does not appear to be a RevShare invoice (missing "RevShare")' });
+          return;
+        }
+        if (!text.match(/\d{6}-WR/)) {
+          resolve({ ok: false, error: 'PDF missing expected invoice number format (XXXXXX-WR)' });
+          return;
+        }
+        resolve({ ok: true });
+      } catch(err) {
+        resolve({ ok: false, error: 'Could not read PDF: ' + err.message });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function handleFile(key, input) {
   const file = input.files[0];
   if (!file) return;
   const spec = REQUIRED_FILES.find(f => f.key === key);
   const ext = file.name.split('.').pop().toLowerCase();
-  states[key] = ext === spec.ext ? 'valid' : 'invalid';
+
+  // Step 1: extension check
+  if (ext !== spec.ext) {
+    states[key] = 'invalid';
+    validationErrors[key] = `Wrong file type — expected .${spec.ext}`;
+    uploaded[key] = file;
+    renderFiles();
+    checkReady();
+    return;
+  }
+
+  // Step 2: clear previous error and show validating state
+  states[key] = 'validating';
   uploaded[key] = file;
+  delete validationErrors[key];
   renderFiles();
+
+  // Step 3: content validation
+  let result;
+  if (spec.ext === 'pdf') {
+    result = await validatePDF(file);
+    // Also check the PDF filename matches the expected entity
+    if (result.ok) {
+      const entityName = key.replace('_pdf', '').toLowerCase();
+      const fileName = file.name.toLowerCase();
+      if (!fileName.includes(entityName)) {
+        result = { ok: false, error: 'Wrong invoice — filename should contain "' + entityName + '"' };
+      }
+    }
+  } else if (key === 'cb_historical') {
+    result = await validateExcel(file, REQUIRED_COLS.cb_historical);
+  } else {
+    result = await validateExcel(file, REQUIRED_COLS.billing_support);
+    // Also check the Excel filename matches the expected entity
+    if (result.ok) {
+      const entityName = key.replace('_excel', '').toLowerCase();
+      const fileName = file.name.toLowerCase();
+      if (!fileName.includes(entityName)) {
+        result = { ok: false, error: 'Wrong file — filename should contain "' + entityName + '". Got: ' + file.name };
+      }
+    }
+  }
+
+  if (result.ok) {
+    states[key] = 'valid';
+    delete validationErrors[key];
+  } else {
+    states[key] = 'invalid';
+    validationErrors[key] = result.error;
+  }
+
+  renderFiles();
+  checkReady();
+}
+
+function checkReady() {
   document.getElementById('run-btn').disabled = !REQUIRED_FILES.every(f => states[f.key] === 'valid');
 }
 
