@@ -452,6 +452,9 @@ function goUpload() {
   document.getElementById('phase-select').style.display = 'none';
   document.getElementById('phase-upload').style.display = 'block';
   setStep(2);
+  // Update the file list label to match selected recon type
+  const labelMap = { revshare: 'Required files — RevShare', attempt_fee: 'Required files — Attempt Fee' };
+  document.querySelector('.card-label') && (document.querySelector('.card-label').textContent = labelMap[selectedRecon] || 'Required files');
   renderFiles();
 }
 
@@ -583,11 +586,21 @@ async function handleFile(key, input) {
         result = { ok: false, error: 'Wrong invoice — filename should contain "' + entityName + '"' };
       }
     }
+    // For Attempt Fee, also verify it's not a RevShare invoice and vice versa
+    if (result.ok && selectedRecon === 'attempt_fee' && file.name.toLowerCase().includes('revshare')) {
+      result = { ok: false, error: 'This looks like a RevShare invoice — please upload an Attempt Fee invoice' };
+    }
+    if (result.ok && selectedRecon === 'revshare' && file.name.toLowerCase().includes('attempt')) {
+      result = { ok: false, error: 'This looks like an Attempt Fee invoice — please upload a RevShare invoice' };
+    }
   } else if (key === 'cb_historical' || key === 'cb_dashboard') {
     const spec2 = REQUIRED_FILES.find(f => f.key === key);
     result = await validateExcel(file, spec2.required_cols || REQUIRED_COLS.cb_historical, null);
+  } else if (spec.required_tabs) {
+    // Attempt Fee billing support — validate tabs exist, no column check needed
+    result = await validateExcel(file, null, spec.required_tabs);
   } else {
-    result = await validateExcel(file, spec.required_cols || REQUIRED_COLS.billing_support, spec.required_tabs || null);
+    result = await validateExcel(file, spec.required_cols || REQUIRED_COLS.billing_support, null);
     // Also check the Excel filename matches the expected entity
     if (result.ok) {
       const entityName = key.replace('_excel', '').toLowerCase();
