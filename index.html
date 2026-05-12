@@ -588,13 +588,46 @@ function setProgress(pct, msg) {
   document.getElementById('progress-label').textContent = msg;
 }
 
+async function buildCBLookup(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb     = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const ws     = wb.Sheets[wb.SheetNames[0]];
+        const rows   = XLSX.utils.sheet_to_json(ws);
+        const lookup = {};
+        for (const row of rows) {
+          const id     = String(row['BILLING_IDENTIFIER'] || '').trim();
+          const status = String(row['INTERNAL_STATUS']    || '').toLowerCase().trim();
+          if (!id) continue;
+          if (!lookup[id] || status === 'win') lookup[id] = status;
+        }
+        resolve(lookup);
+      } catch(e) {
+        resolve({});
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 async function runRecon() {
   document.getElementById('run-btn').disabled = true;
   document.getElementById('error-box').style.display = 'none';
   setProgress(10, 'Preparing files...');
 
+  // Process CB Historical in the browser — builds lookup before sending to n8n
+  setProgress(15, 'Processing CB Historical...');
+  const cbLookup = await buildCBLookup(uploaded['cb_historical']);
+
   const form = new FormData();
-  for (const [key, file] of Object.entries(uploaded)) form.append(key, file, file.name);
+  // Send all files except CB Historical (too large for n8n memory)
+  for (const [key, file] of Object.entries(uploaded)) {
+    if (key !== 'cb_historical') form.append(key, file, file.name);
+  }
+  // Send CB Historical lookup as JSON string instead
+  form.append('cb_lookup_json', JSON.stringify(cbLookup));
 
   setProgress(30, 'Sending to n8n...');
   try {
