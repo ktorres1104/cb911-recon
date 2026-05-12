@@ -344,15 +344,15 @@
     <div class="card">
       <div class="card-label">Reconciliation type</div>
       <div class="recon-grid">
-        <button class="recon-btn selected" id="btn-revshare" onclick="selectType(this)">
+        <button class="recon-btn selected" id="btn-revshare" onclick="selectType(this,'revshare')">
           <div class="rb-badge badge-live">live</div>
           <div class="rb-name">RevShare</div>
           <div class="rb-desc">Net wins & fee validation across entities</div>
         </button>
-        <button class="recon-btn disabled">
-          <div class="rb-badge badge-soon">soon</div>
+        <button class="recon-btn" id="btn-attempt-fee" onclick="selectType(this,'attempt_fee')">
+          <div class="rb-badge badge-live">live</div>
           <div class="rb-name">Attempt Fee</div>
-          <div class="rb-desc">Alerts, OI inquiries & chargebacks</div>
+          <div class="rb-desc">CB, DNR, Alerts & OI reconciliation</div>
         </button>
         <button class="recon-btn disabled">
           <div class="rb-badge badge-soon">soon</div>
@@ -402,17 +402,33 @@
 <script>
 const N8N_URL = '/api/recon';
 
-const REQUIRED_FILES = [
-  { key:'bold_excel',      label:'Bold Billing Support',      ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Bold_Billing_Support.xlsx' },
-  { key:'petunia_excel',   label:'Petunia Billing Support',   ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Petunia_Billing_Support.xlsx' },
-  { key:'seventeen_excel', label:'Seventeen Billing Support', ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Seventeen_Billing_Support.xlsx' },
-  { key:'sonaga_excel',    label:'Sonaga Billing Support',    ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Sonaga_Billing_Support.xlsx' },
-  { key:'bold_pdf',        label:'Bold Invoice',              ext:'pdf',  badge:'pdf',  desc:'Revshare_Bold.pdf' },
-  { key:'petunia_pdf',     label:'Petunia Invoice',           ext:'pdf',  badge:'pdf',  desc:'Revshare_Petunia.pdf' },
-  { key:'seventeen_pdf',   label:'Seventeen Invoice',         ext:'pdf',  badge:'pdf',  desc:'Revshare_Seventeen.pdf' },
-  { key:'sonaga_pdf',      label:'Sonaga Invoice',            ext:'pdf',  badge:'pdf',  desc:'Revshare_Sonaga.pdf' },
-  { key:'cb_historical',   label:'CB Historical',             ext:'xlsx', badge:'xlsx', desc:'CB_Historical.xlsx' },
-];
+const RECON_FILES = {
+  revshare: [
+    { key:'bold_excel',      label:'Bold Billing Support',      ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Bold_Billing_Support.xlsx' },
+    { key:'petunia_excel',   label:'Petunia Billing Support',   ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Petunia_Billing_Support.xlsx' },
+    { key:'seventeen_excel', label:'Seventeen Billing Support', ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Seventeen_Billing_Support.xlsx' },
+    { key:'sonaga_excel',    label:'Sonaga Billing Support',    ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Sonaga_Billing_Support.xlsx' },
+    { key:'bold_pdf',        label:'Bold Invoice',              ext:'pdf',  badge:'pdf',  desc:'Revshare_Bold.pdf' },
+    { key:'petunia_pdf',     label:'Petunia Invoice',           ext:'pdf',  badge:'pdf',  desc:'Revshare_Petunia.pdf' },
+    { key:'seventeen_pdf',   label:'Seventeen Invoice',         ext:'pdf',  badge:'pdf',  desc:'Revshare_Seventeen.pdf' },
+    { key:'sonaga_pdf',      label:'Sonaga Invoice',            ext:'pdf',  badge:'pdf',  desc:'Revshare_Sonaga.pdf' },
+    { key:'cb_historical',   label:'CB Historical',             ext:'xlsx', badge:'xlsx', desc:'CB_Historical.xlsx' },
+  ],
+  attempt_fee: [
+    { key:'bold_excel',      label:'Bold Billing Support',      ext:'xlsx', badge:'xlsx', desc:'Current Month Attempt Fees Bold Billing Support.xlsx',      required_tabs:['Alerts','Chargebacks','OI Inquiries'] },
+    { key:'petunia_excel',   label:'Petunia Billing Support',   ext:'xlsx', badge:'xlsx', desc:'Current Month Attempt Fees Petunia Billing Support.xlsx',   required_tabs:['Alerts','Chargebacks','OI Inquiries'] },
+    { key:'seventeen_excel', label:'Seventeen Billing Support', ext:'xlsx', badge:'xlsx', desc:'Current Month Attempt Fees Seventeen Billing Support.xlsx', required_tabs:['Alerts','Chargebacks','OI Inquiries'] },
+    { key:'sonaga_excel',    label:'Sonaga Billing Support',    ext:'xlsx', badge:'xlsx', desc:'Current Month Attempt Fees Sonaga Billing Support.xlsx',    required_tabs:['Alerts','Chargebacks','OI Inquiries'] },
+    { key:'bold_pdf',        label:'Bold Invoice',              ext:'pdf',  badge:'pdf',  desc:'Attempt Fee Bold.pdf' },
+    { key:'petunia_pdf',     label:'Petunia Invoice',           ext:'pdf',  badge:'pdf',  desc:'Attempt Fee Petunia.pdf' },
+    { key:'seventeen_pdf',   label:'Seventeen Invoice',         ext:'pdf',  badge:'pdf',  desc:'Attempt Fee Seventeen.pdf' },
+    { key:'sonaga_pdf',      label:'Sonaga Invoice',            ext:'pdf',  badge:'pdf',  desc:'Attempt Fee Sonaga.pdf' },
+    { key:'cb_dashboard',    label:'CB911 Dashboard',           ext:'xlsx', badge:'xlsx', desc:'CB911 Dashboard Python.xlsx', required_cols:['Chargeback ID','Status','Case Type','PreArb'] },
+  ]
+};
+
+let selectedRecon = 'revshare';
+let REQUIRED_FILES = RECON_FILES.revshare;
 
 const uploaded = {};
 const states   = {};
@@ -425,9 +441,11 @@ function setStep(n) {
   });
 }
 
-function selectType(el) {
+function selectType(el, type) {
   document.querySelectorAll('.recon-btn:not(.disabled)').forEach(b => b.classList.remove('selected'));
   el.classList.add('selected');
+  selectedRecon = type;
+  REQUIRED_FILES = RECON_FILES[type];
 }
 
 function goUpload() {
@@ -468,26 +486,39 @@ const REQUIRED_COLS = {
 
 const validationErrors = {};
 
-async function validateExcel(file, requiredCols) {
+async function validateExcel(file, requiredCols, requiredTabs) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-        if (!rows || rows.length < 2) {
-          resolve({ ok: false, error: 'File appears empty or has no data rows' });
-          return;
+
+        // Check required tabs first
+        if (requiredTabs && requiredTabs.length > 0) {
+          const missingTabs = requiredTabs.filter(tab => !wb.SheetNames.includes(tab));
+          if (missingTabs.length > 0) {
+            resolve({ ok: false, error: 'Missing tabs: ' + missingTabs.join(', ') });
+            return;
+          }
         }
-        // Headers are in first row
-        const headers = rows[0].map(h => String(h || '').trim());
-        const missing = requiredCols.filter(col => !headers.includes(col));
-        if (missing.length > 0) {
-          resolve({ ok: false, error: `Missing columns: ${missing.join(', ')}` });
-        } else {
-          resolve({ ok: true, rowCount: rows.length - 1 });
+
+        // Check columns in first sheet (or specified sheet)
+        if (requiredCols && requiredCols.length > 0) {
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+          if (!rows || rows.length < 2) {
+            resolve({ ok: false, error: 'File appears empty or has no data rows' });
+            return;
+          }
+          const headers = rows[0].map(h => String(h || '').trim());
+          const missing = requiredCols.filter(col => !headers.includes(col));
+          if (missing.length > 0) {
+            resolve({ ok: false, error: 'Missing columns: ' + missing.join(', ') });
+            return;
+          }
         }
+
+        resolve({ ok: true });
       } catch(err) {
         resolve({ ok: false, error: 'Could not read file: ' + err.message });
       }
@@ -552,10 +583,11 @@ async function handleFile(key, input) {
         result = { ok: false, error: 'Wrong invoice — filename should contain "' + entityName + '"' };
       }
     }
-  } else if (key === 'cb_historical') {
-    result = await validateExcel(file, REQUIRED_COLS.cb_historical);
+  } else if (key === 'cb_historical' || key === 'cb_dashboard') {
+    const spec2 = REQUIRED_FILES.find(f => f.key === key);
+    result = await validateExcel(file, spec2.required_cols || REQUIRED_COLS.cb_historical, null);
   } else {
-    result = await validateExcel(file, REQUIRED_COLS.billing_support);
+    result = await validateExcel(file, spec.required_cols || REQUIRED_COLS.billing_support, spec.required_tabs || null);
     // Also check the Excel filename matches the expected entity
     if (result.ok) {
       const entityName = key.replace('_excel', '').toLowerCase();
@@ -612,22 +644,59 @@ async function buildCBLookup(file) {
   });
 }
 
+async function buildDashboardLookup(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb   = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws);
+        // Build lookup: Chargeback ID -> { Status, Case Type, PreArb }
+        const lookup = {};
+        for (const row of rows) {
+          const id = row['Chargeback ID'];
+          if (!id) continue;
+          lookup[id] = {
+            status:    row['Status']    || null,
+            caseType:  row['Case Type'] || null,
+            preArb:    row['PreArb']    || null
+          };
+        }
+        resolve(lookup);
+      } catch(e) {
+        resolve({});
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 async function runRecon() {
   document.getElementById('run-btn').disabled = true;
   document.getElementById('error-box').style.display = 'none';
   setProgress(10, 'Preparing files...');
 
-  // Process CB Historical in the browser — builds lookup before sending to n8n
-  setProgress(15, 'Processing CB Historical...');
-  const cbLookup = await buildCBLookup(uploaded['cb_historical']);
-
+  // For RevShare: process CB Historical in browser (445k rows — too large for n8n)
+  // For Attempt Fee: process CB911 Dashboard in browser (142k rows)
   const form = new FormData();
-  // Send all files except CB Historical (too large for n8n memory)
-  for (const [key, file] of Object.entries(uploaded)) {
-    if (key !== 'cb_historical') form.append(key, file, file.name);
+
+  if (selectedRecon === 'revshare') {
+    setProgress(15, 'Processing CB Historical...');
+    const cbLookup = await buildCBLookup(uploaded['cb_historical']);
+    for (const [key, file] of Object.entries(uploaded)) {
+      if (key !== 'cb_historical') form.append(key, file, file.name);
+    }
+    form.append('cb_lookup_json', JSON.stringify(cbLookup));
+  } else {
+    setProgress(15, 'Processing CB911 Dashboard...');
+    const dashLookup = await buildDashboardLookup(uploaded['cb_dashboard']);
+    for (const [key, file] of Object.entries(uploaded)) {
+      if (key !== 'cb_dashboard') form.append(key, file, file.name);
+    }
+    form.append('dashboard_json', JSON.stringify(dashLookup));
   }
-  // Send CB Historical lookup as JSON string instead
-  form.append('cb_lookup_json', JSON.stringify(cbLookup));
+  form.append('recon_type', selectedRecon);
 
   setProgress(30, 'Sending to n8n...');
   try {
@@ -657,6 +726,14 @@ function showResults(data) {
   document.getElementById('phase-results').style.display = 'block';
   setStep(3);
 
+  if (data.recon_type === 'attempt_fee') {
+    showAttemptFeeResults(data);
+  } else {
+    showRevShareResults(data);
+  }
+}
+
+function showRevShareResults(data) {
   const rows = data.recon_rows || [];
   const tot  = data.totals    || {};
   const allOk = tot.qty_match && tot.net_wins_match && tot.fee_match;
@@ -669,31 +746,104 @@ function showResults(data) {
     <div class="metric"><div class="metric-label">Unmatched in history</div><div class="metric-val ${totalNotFound>0?'amber':'green'}">${fmtN(totalNotFound)}</div></div>
   `;
 
-  const rHead = `<thead><tr>
-    <th>Entity</th><th>Invoice #</th>
-    <th>Inv. cases</th><th>Int. cases</th><th>Qty</th>
-    <th>Inv. net wins</th><th>Int. net wins</th><th>Wins</th>
-    <th>Inv. fee</th><th>Int. fee</th><th>Fee</th>
-  </tr></thead>`;
-  const rBody = [...rows, {...tot, entity:'Total', invoice_no:''}].map(r => `<tr>
-    <td>${r.entity}</td>
-    <td style="color:var(--text-2)">${r.invoice_no||'—'}</td>
-    <td>${fmtN(r.inv_qty||0)}</td><td>${fmtN(r.int_qty||0)}</td><td>${pill(r.qty_match)}</td>
-    <td>${fmt(r.inv_net_wins||0)}</td><td>${fmt(r.int_net_wins||0)}</td><td>${pill(r.net_wins_match)}</td>
-    <td>${fmt(r.inv_amount||0)}</td><td>${fmt(r.int_fee||0)}</td><td>${pill(r.fee_match)}</td>
-  </tr>`).join('');
+  const rHead = '<thead><tr><th>Entity</th><th>Invoice #</th><th>Inv. cases</th><th>Int. cases</th><th>Qty</th><th>Inv. net wins</th><th>Int. net wins</th><th>Wins</th><th>Inv. fee</th><th>Int. fee</th><th>Fee</th></tr></thead>';
+  const rBody = [...rows, {...tot, entity:'Total', invoice_no:''}].map(r => '<tr>' +
+    '<td>'+r.entity+'</td><td style="color:var(--text-2)">'+(r.invoice_no||'—')+'</td>' +
+    '<td>'+fmtN(r.inv_qty||0)+'</td><td>'+fmtN(r.int_qty||0)+'</td><td>'+pill(r.qty_match)+'</td>' +
+    '<td>'+fmt(r.inv_net_wins||0)+'</td><td>'+fmt(r.int_net_wins||0)+'</td><td>'+pill(r.net_wins_match)+'</td>' +
+    '<td>'+fmt(r.inv_amount||0)+'</td><td>'+fmt(r.int_fee||0)+'</td><td>'+pill(r.fee_match)+'</td>' +
+  '</tr>').join('');
   document.getElementById('recon-table').innerHTML = rHead + '<tbody>' + rBody + '</tbody>';
 
-  const cHead = `<thead><tr><th>Entity</th><th>Wins</th><th>Losses</th><th>Not found</th><th>Total</th><th>Match rate</th></tr></thead>`;
-  const cBody = [...rows, {...tot, entity:'Total'}].map(r => `<tr>
-    <td>${r.entity}</td>
-    <td style="color:var(--green)">${fmtN(r.cb_wins||0)}</td>
-    <td style="color:var(--red)">${fmtN(r.cb_losses||0)}</td>
-    <td style="color:var(--amber)">${fmtN(r.cb_not_found||0)}</td>
-    <td>${fmtN(r.cb_total||0)}</td>
-    <td>${pct((r.cb_wins||0)+(r.cb_losses||0), r.cb_total||0)}</td>
-  </tr>`).join('');
+  const cHead = '<thead><tr><th>Entity</th><th>Wins</th><th>Losses</th><th>Not found</th><th>Total</th><th>Match rate</th></tr></thead>';
+  const cBody = [...rows, {...tot, entity:'Total'}].map(r => '<tr>' +
+    '<td>'+r.entity+'</td>' +
+    '<td style="color:var(--green)">'+fmtN(r.cb_wins||0)+'</td>' +
+    '<td style="color:var(--red)">'+fmtN(r.cb_losses||0)+'</td>' +
+    '<td style="color:var(--amber)">'+fmtN(r.cb_not_found||0)+'</td>' +
+    '<td>'+fmtN(r.cb_total||0)+'</td>' +
+    '<td>'+pct((r.cb_wins||0)+(r.cb_losses||0), r.cb_total||0)+'</td>' +
+  '</tr>').join('');
   document.getElementById('cb-table').innerHTML = cHead + '<tbody>' + cBody + '</tbody>';
+}
+
+function showAttemptFeeResults(data) {
+  const rows = data.recon_rows || [];
+  const tot  = data.totals    || {};
+  const allOk = rows.every(r => r.cb_match && r.dnr_match);
+
+  document.getElementById('summary-grid').innerHTML =
+    '<div class="metric"><div class="metric-label">Total invoice amount</div><div class="metric-val">'+fmt(tot.total_due||0)+'</div></div>' +
+    '<div class="metric"><div class="metric-label">Total net CB</div><div class="metric-val">'+fmtN(tot.int_net_cb||0)+'</div></div>' +
+    '<div class="metric"><div class="metric-label">Overall CB status</div><div class="metric-val '+(allOk?'green':'red')+'">'+(allOk?'Matched':'Discrepancy')+'</div></div>' +
+    '<div class="metric"><div class="metric-label">Entities with issues</div><div class="metric-val '+(tot.issues>0?'red':'green')+'">'+fmtN(tot.issues||0)+'</div></div>';
+
+  // Main recon table
+  const rHead = '<thead><tr><th>Entity</th><th>Invoice #</th><th>Total Due</th>' +
+    '<th>Inv CB</th><th>Int CB</th><th>CB</th>' +
+    '<th>Inv DNR</th><th>Int DNR</th><th>DNR</th>' +
+    '<th>Net CB</th><th>Inv Net</th><th>Int Net</th>' +
+    '<th>Alerts</th><th>OI</th>' +
+  '</tr></thead>';
+
+  const rBody = [...rows, {...tot, entity:'Total', invoice_no:''}].map(r =>
+    '<tr>' +
+    '<td>'+r.entity+'</td>' +
+    '<td style="color:var(--text-2)">'+(r.invoice_no||'—')+'</td>' +
+    '<td>'+fmt(r.total_due||0)+'</td>' +
+    '<td>'+fmtN(r.inv_cb||0)+'</td><td>'+fmtN(r.int_cb||0)+'</td><td>'+pill(r.cb_match)+'</td>' +
+    '<td>'+fmtN(r.inv_dnr||0)+'</td><td>'+fmtN(r.int_dnr||0)+'</td><td>'+pill(r.dnr_match)+'</td>' +
+    '<td>'+pill(r.net_cb_match)+'</td><td>'+fmtN(r.inv_net_cb||0)+'</td><td>'+fmtN(r.int_net_cb||0)+'</td>' +
+    '<td>'+fmtN(r.int_alerts_total||0)+'</td>' +
+    '<td>'+fmtN(r.int_oi_total||0)+'</td>' +
+    '</tr>'
+  ).join('');
+  document.getElementById('recon-table').innerHTML = rHead + '<tbody>' + rBody + '</tbody>';
+
+  // Alerts & OI breakdown table
+  const cHead = '<thead><tr><th>Entity</th><th>Verifi</th><th>RDR</th><th>Order Insight</th><th>Other</th><th>Total Alerts</th><th>OI</th><th>CE Lookup</th><th>CE Deflection</th><th>Total OI</th></tr></thead>';
+  const cBody = rows.map(r =>
+    '<tr>' +
+    '<td>'+r.entity+'</td>' +
+    '<td>'+fmtN(r.int_alerts_verifi||0)+'</td>' +
+    '<td>'+fmtN(r.int_alerts_rdr||0)+'</td>' +
+    '<td>'+fmtN(r.int_alerts_oi||0)+'</td>' +
+    '<td>'+fmtN(r.int_alerts_other||0)+'</td>' +
+    '<td style="font-weight:500">'+fmtN(r.int_alerts_total||0)+'</td>' +
+    '<td>'+fmtN(r.int_oi_oi||0)+'</td>' +
+    '<td>'+fmtN(r.int_oi_ce_lookup||0)+'</td>' +
+    '<td>'+fmtN(r.int_oi_ce_deflection||0)+'</td>' +
+    '<td style="font-weight:500">'+fmtN(r.int_oi_total||0)+'</td>' +
+    '</tr>'
+  ).join('');
+  document.getElementById('cb-table').innerHTML = cHead + '<tbody>' + cBody + '</tbody>';
+
+  // Dashboard match table — inject after cb-table card
+  const dashHead = '<thead><tr><th>Entity</th><th>Found in Dashboard</th><th>Not Found</th><th>Pre-Arbs</th><th>Total Billed CB</th><th>Match Rate</th></tr></thead>';
+  const dashBody = [...rows, {...tot, entity:'Total'}].map(r =>
+    '<tr>' +
+    '<td>'+r.entity+'</td>' +
+    '<td style="color:var(--green)">'+fmtN(r.dash_found||0)+'</td>' +
+    '<td style="color:var(--red)">'+fmtN(r.dash_not_found||0)+'</td>' +
+    '<td style="color:var(--amber)">'+fmtN(r.dash_pre_arbs||0)+'</td>' +
+    '<td>'+fmtN(r.int_cb||0)+'</td>' +
+    '<td>'+(r.int_cb > 0 ? (Math.round((r.dash_found||0)/r.int_cb*1000)/10)+'%' : '—')+'</td>' +
+    '</tr>'
+  ).join('');
+
+  // Add dashboard card if not already present
+  let dashCard = document.getElementById('dash-match-card');
+  if (!dashCard) {
+    dashCard = document.createElement('div');
+    dashCard.id = 'dash-match-card';
+    dashCard.className = 'card';
+    document.getElementById('cb-table').closest('.card').insertAdjacentElement('afterend', dashCard);
+  }
+  dashCard.innerHTML = '<div class="section-title">CB911 Dashboard match — billed CB IDs</div><div class="table-wrap"><table id="dash-table">' + dashHead + '<tbody>' + dashBody + '</tbody></table></div>';
+
+  // Update section titles
+  document.querySelector('#recon-table').closest('.card').querySelector('.section-title').textContent = 'Chargeback reconciliation — Attempt Fee';
+  document.querySelector('#cb-table').closest('.card').querySelector('.section-title').textContent = 'Alerts & OI breakdown';
 }
 
 function downloadExcel() {
@@ -722,7 +872,11 @@ function downloadExcel() {
 function resetApp() {
   Object.keys(uploaded).forEach(k => delete uploaded[k]);
   Object.keys(states).forEach(k => delete states[k]);
+  Object.keys(validationErrors).forEach(k => delete validationErrors[k]);
   lastResults = null;
+  // Remove dynamic dashboard card if present
+  const dashCard = document.getElementById('dash-match-card');
+  if (dashCard) dashCard.remove();
   document.getElementById('phase-results').style.display = 'none';
   document.getElementById('phase-select').style.display = 'block';
   document.getElementById('progress-wrap').style.display = 'none';
