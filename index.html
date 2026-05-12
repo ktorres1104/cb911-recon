@@ -400,7 +400,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const N8N_URL = '/api/recon';;
+const N8N_URL = '/api/recon';
 
 const REQUIRED_FILES = [
   { key:'bold_excel',      label:'Bold Billing Support',      ext:'xlsx', badge:'xlsx', desc:'Current_Month_Revshare_Bold_Billing_Support.xlsx' },
@@ -508,16 +508,7 @@ async function validatePDF(file) {
           resolve({ ok: false, error: 'File is not a valid PDF' });
           return;
         }
-        // Read text and check for expected invoice markers
-        const text = new TextDecoder('latin1').decode(new Uint8Array(e.target.result));
-        if (!text.includes('RevShare')) {
-          resolve({ ok: false, error: 'PDF does not appear to be a RevShare invoice (missing "RevShare")' });
-          return;
-        }
-        if (!text.match(/\d{6}-WR/)) {
-          resolve({ ok: false, error: 'PDF missing expected invoice number format (XXXXXX-WR)' });
-          return;
-        }
+        // Valid PDF - entity name check happens in handleFile
         resolve({ ok: true });
       } catch(err) {
         resolve({ ok: false, error: 'Could not read PDF: ' + err.message });
