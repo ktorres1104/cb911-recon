@@ -367,7 +367,7 @@
   <!-- Phase 2: Upload files -->
   <div id="phase-upload" style="display:none">
     <div class="card">
-      <div class="card-label">Required files — RevShare</div>
+      <div class="card-label" id="files-label">Required files — RevShare</div>
       <div class="file-list" id="file-list"></div>
     </div>
     <button class="btn-primary" id="run-btn" disabled onclick="runRecon()">Run reconciliation</button>
@@ -457,7 +457,7 @@ function goUpload() {
   setStep(2);
   // Update the file list label to match selected recon type
   const labelMap = { revshare: 'Required files — RevShare', attempt_fee: 'Required files — Attempt Fee' };
-  document.querySelector('.card-label') && (document.querySelector('.card-label').textContent = labelMap[selectedRecon] || 'Required files');
+  document.getElementById('files-label').textContent = labelMap[selectedRecon] || 'Required files';
   renderFiles();
 }
 
@@ -714,11 +714,11 @@ async function runRecon() {
   }
   form.append('recon_type', selectedRecon);
 
-  setProgress(30, 'Sending to n8n...');
+  setProgress(30, 'Sending to n8n (' + (selectedRecon === 'attempt_fee' ? 'Attempt Fee' : 'RevShare') + ')...');
   try {
     const resp = await fetch(N8N_URLS[selectedRecon], { method:'POST', body: form });
     setProgress(75, 'Running reconciliation logic...');
-    if (!resp.ok) throw new Error('n8n returned ' + resp.status + ': ' + await resp.text());
+    if (!resp.ok) throw new Error('n8n returned ' + resp.status + ' for ' + N8N_URLS[selectedRecon] + ': ' + await resp.text());
     const data = await resp.json();
     setProgress(100, 'Complete.');
     setTimeout(() => showResults(data), 350);
@@ -742,7 +742,8 @@ function showResults(data) {
   document.getElementById('phase-results').style.display = 'block';
   setStep(3);
 
-  if (data.recon_type === 'attempt_fee') {
+  const reconType = data.recon_type || selectedRecon;
+  if (reconType === 'attempt_fee') {
     showAttemptFeeResults(data);
   } else {
     showRevShareResults(data);
