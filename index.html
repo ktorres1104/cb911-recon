@@ -688,6 +688,93 @@ async function buildDashboardLookup(file) {
   });
 }
 
+async function extractPDFText(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        // Load PDF.js from CDN
+        if (!window.pdfjsLib) {
+          await new Promise((res, rej) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            script.onload = res;
+            script.onerror = rej;
+            document.head.appendChild(script);
+          });
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+        const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(e.target.result) }).promise;
+        let text = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          text += content.items.map(item => item.str).join(' ') + '\n';
+        }
+        resolve(text);
+      } catch(err) {
+        resolve('');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function buildBillingSupport(file, entity) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+
+        // --- Chargebacks tab ---
+        const cbWs   = wb.Sheets['Chargebacks'];
+        const cbRows = cbWs ? XLSX.utils.sheet_to_json(cbWs) : [];
+        const total_cb = cbRows.length;
+        const dnr      = cbRows.filter(r => r['Do Not Represent'] != null && r['Do Not Represent'] !== '').length;
+        const cbIds    = cbRows.map(r => String(r['CB ID'] || '')).filter(Boolean);
+
+        // --- Alerts tab ---
+        const alWs   = wb.Sheets['Alerts'];
+        const alRows = alWs ? XLSX.utils.sheet_to_json(alWs) : [];
+        const alertCounts = { Verifi: 0, RDR: 0, 'Order Insight': 0, Other: 0 };
+        for (const r of alRows) {
+          const t = r['Alert Name'] || 'Other';
+          if (alertCounts[t] !== undefined) alertCounts[t]++;
+          else alertCounts['Other']++;
+        }
+
+        // --- OI Inquiries tab ---
+        const oiWs   = wb.Sheets['OI Inquiries'];
+        const oiRows = oiWs ? XLSX.utils.sheet_to_json(oiWs) : [];
+        const oiCounts = { OI: 0, 'CE Lookup': 0, 'CE Deflection': 0 };
+        for (const r of oiRows) {
+          const t = r['OI Type'] || '';
+          if (oiCounts[t] !== undefined) oiCounts[t]++;
+        }
+
+        resolve({
+          entity,
+          total_cb, dnr, net_cb: total_cb - dnr, cbIds,
+          alerts_verifi:  alertCounts['Verifi'],
+          alerts_rdr:     alertCounts['RDR'],
+          alerts_oi:      alertCounts['Order Insight'],
+          alerts_other:   alertCounts['Other'],
+          alerts_total:   alRows.length,
+          oi_oi:            oiCounts['OI'],
+          oi_ce_lookup:     oiCounts['CE Lookup'],
+          oi_ce_deflection: oiCounts['CE Deflection'],
+          oi_total:         oiRows.length
+        });
+      } catch(err) {
+        resolve({ entity, error: err.message, total_cb: 0, dnr: 0, net_cb: 0, cbIds: [] });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 async function runRecon() {
   document.getElementById('run-btn').disabled = true;
   document.getElementById('error-box').style.display = 'none';
@@ -705,12 +792,40 @@ async function runRecon() {
     }
     form.append('cb_lookup_json', JSON.stringify(cbLookup));
   } else {
-    setProgress(15, 'Processing CB911 Dashboard...');
+    // Process CB911 Dashboard in browser
+    setProgress(12, 'Processing CB911 Dashboard...');
     const dashLookup = await buildDashboardLookup(uploaded['cb_dashboard']);
-    for (const [key, file] of Object.entries(uploaded)) {
-      if (key !== 'cb_dashboard') form.append(key, file, file.name);
+
+    // Process all 4 billing support Excels in browser (avoids n8n memory crash)
+    setProgress(18, 'Processing billing support files...');
+    const billingEntities = ['bold', 'petunia', 'seventeen', 'sonaga'];
+    const billingData = {};
+    for (const entity of billingEntities) {
+      const file = uploaded[entity + '_excel'];
+      if (file) {
+        const entityLabel = entity.charAt(0).toUpperCase() + entity.slice(1);
+        const summary = await buildBillingSupport(file, entityLabel);
+        billingData[entityLabel] = summary;
+      }
     }
-    form.append('dashboard_json', JSON.stringify(dashLookup));
+
+    // Extract PDF text in browser — send text instead of binary files
+    // This avoids n8n memory crashes from binary file processing
+    setProgress(22, 'Extracting invoice text...');
+    const pdfEntities = ['bold', 'petunia', 'seventeen', 'sonaga'];
+    const pdfTexts = {};
+    for (const entity of pdfEntities) {
+      const file = uploaded[entity + '_pdf'];
+      if (file) {
+        const entityLabel = entity.charAt(0).toUpperCase() + entity.slice(1);
+        pdfTexts[entityLabel] = await extractPDFText(file);
+      }
+    }
+
+    // Send everything as JSON — no binary files at all
+    form.append('dashboard_json',    JSON.stringify(dashLookup));
+    form.append('billing_data_json', JSON.stringify(billingData));
+    form.append('pdf_texts_json',    JSON.stringify(pdfTexts));
   }
   form.append('recon_type', selectedRecon);
 
