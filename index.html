@@ -721,7 +721,7 @@ async function extractPDFText(file) {
   });
 }
 
-async function buildBillingSupport(file, entity) {
+async function buildBillingSupport(file, entity, dashLookup) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -733,7 +733,19 @@ async function buildBillingSupport(file, entity) {
         const cbRows = cbWs ? XLSX.utils.sheet_to_json(cbWs) : [];
         const total_cb = cbRows.length;
         const dnr      = cbRows.filter(r => r['Do Not Represent'] != null && r['Do Not Represent'] !== '').length;
-        const cbIds    = cbRows.map(r => String(r['CB ID'] || '')).filter(Boolean);
+
+        // --- Dashboard match (done here in browser to avoid sending 11MB to n8n) ---
+        let dash_found = 0, dash_not_found = 0, dash_pre_arbs = 0;
+        for (const r of cbRows) {
+          const id = String(r['CB ID'] || '');
+          if (!id) continue;
+          const dashData = dashLookup[id];
+          if (!dashData) { dash_not_found++; }
+          else {
+            dash_found++;
+            if (String(dashData.preArb || '').toLowerCase() === 'yes') dash_pre_arbs++;
+          }
+        }
 
         // --- Alerts tab ---
         const alWs   = wb.Sheets['Alerts'];
@@ -756,19 +768,20 @@ async function buildBillingSupport(file, entity) {
 
         resolve({
           entity,
-          total_cb, dnr, net_cb: total_cb - dnr, cbIds,
-          alerts_verifi:  alertCounts['Verifi'],
-          alerts_rdr:     alertCounts['RDR'],
-          alerts_oi:      alertCounts['Order Insight'],
-          alerts_other:   alertCounts['Other'],
-          alerts_total:   alRows.length,
+          total_cb, dnr, net_cb: total_cb - dnr,
+          dash_found, dash_not_found, dash_pre_arbs,
+          alerts_verifi:    alertCounts['Verifi'],
+          alerts_rdr:       alertCounts['RDR'],
+          alerts_oi:        alertCounts['Order Insight'],
+          alerts_other:     alertCounts['Other'],
+          alerts_total:     alRows.length,
           oi_oi:            oiCounts['OI'],
           oi_ce_lookup:     oiCounts['CE Lookup'],
           oi_ce_deflection: oiCounts['CE Deflection'],
           oi_total:         oiRows.length
         });
       } catch(err) {
-        resolve({ entity, error: err.message, total_cb: 0, dnr: 0, net_cb: 0, cbIds: [] });
+        resolve({ entity, error: err.message, total_cb: 0, dnr: 0, net_cb: 0 });
       }
     };
     reader.readAsArrayBuffer(file);
@@ -804,7 +817,7 @@ async function runRecon() {
       const file = uploaded[entity + '_excel'];
       if (file) {
         const entityLabel = entity.charAt(0).toUpperCase() + entity.slice(1);
-        const summary = await buildBillingSupport(file, entityLabel);
+        const summary = await buildBillingSupport(file, entityLabel, dashLookup);
         billingData[entityLabel] = summary;
       }
     }
@@ -823,11 +836,9 @@ async function runRecon() {
     }
 
     // Send everything as JSON — no binary files at all
-    form.append('dashboard_json',    JSON.stringify(dashLookup));
     form.append('billing_data_json', JSON.stringify(billingData));
     form.append('pdf_texts_json',    JSON.stringify(pdfTexts));
-  }
-  form.append('recon_type', selectedRecon);
+    form.append('recon_type', selectedRecon);
 
   setProgress(30, 'Sending to n8n (' + (selectedRecon === 'attempt_fee' ? 'Attempt Fee' : 'RevShare') + ')...');
   try {
